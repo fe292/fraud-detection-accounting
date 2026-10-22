@@ -10,7 +10,7 @@ from fraud_pipeline import make_fraud_pipeline, split_raw_data
 def sample_data():
     x, y = make_classification(
         n_samples=420, n_features=8, n_informative=5, n_redundant=0,
-        weights=[0.90, 0.10], random_state=7,
+        weights=[0.95, 0.05], random_state=7,
     )
     df = pd.DataFrame(x, columns=[f"f{i}" for i in range(8)])
     df["Class"] = y
