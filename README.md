@@ -1,84 +1,76 @@
 # Fraud Detection in Large-Scale Accounting Data
 
-Machine learning project for detecting fraudulent transactions in large-scale financial/accounting data. This project applies a complete, responsible ML workflow: data preparation, model comparison, handling class imbalance, hyperparameter tuning, cross-validation, explainability, and model deployment.
+Educational ML project for detecting fraudulent transactions in a highly imbalanced dataset.
 
-## Project Overview
+## Current status (leakage-safe pilot, 22 October 2026)
 
-Fraud detection is a critical application of machine learning in accounting and auditing. This project uses a real-world, highly imbalanced credit-card transaction dataset to build and evaluate models that can automatically flag suspicious transactions.
+The current `fraud_detection.ipynb` has been rewritten to avoid data leakage in the original notebook:
 
-## Dataset
+- **Raw, stratified train/test split first** — the untouched 20% test partition is never used to fit `StandardScaler` or any sampler.
+- **Per-fold preprocessing** — `imblearn.pipeline.Pipeline` refits `StandardScaler`, `SMOTE`, and the classifier on the training portion of each cross-validation fold.
+- **Model selection and tuning are training-only** — Logistic Regression, Random Forest, XGBoost, and a tuned Random Forest are evaluated using stratified CV, with **average precision (PR-AUC)** as the selection metric.
+- **Held-out test evaluation happens once** after model choice. The notebook also displays F1, precision, recall, ROC-AUC, confusion matrix, and PR curve.
+- **One fitted pipeline is saved** using joblib; inference uses raw data, so no separate manually prefit scaler is required.
+- Small synthetic-data regression tests (`tests/test_fraud_pipeline.py`) verify that test rows are excluded from the scaler fit and that each CV fold gets its own fitted scaler and SMOTE.
 
-- **Source:** [Credit Card Fraud Detection (Kaggle)](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
-- **Size:** 284,807 transactions, 30 features
-- **Imbalance:** Only 492 fraud cases (~0.173%)
-- **Note:** The dataset (`creditcard.csv`) is not included here due to its size. Download it from the Kaggle link above and place it in the project folder.
+### Benchmark status — important
 
-## Methodology
+Previously displayed scores such as **Random Forest F1 0.8482** and **5-fold CV F1 0.860 ± 0.028** come from the **historical, leakage-affected notebook**. They **are not validated results of this revised workflow** and must not be used as updated claims. Earlier committed PNGs (`confusion_matrix.png`, `roc_curve.png`, `feature_importance.png`, `shap_summary.png`) are also historical artifacts.
 
-1. **Data preparation** — feature scaling with StandardScaler
-2. **Train/test split** — 80/20 stratified split to preserve the fraud ratio
-3. **Class imbalance** — handled with SMOTE (applied to training data only)
-4. **Modeling** — compared Logistic Regression, Random Forest, and XGBoost
-5. **Evaluation** — accuracy, precision, recall, F1-score, ROC-AUC
-6. **Optimization** — hyperparameter tuning with GridSearchCV
-7. **Validation** — 5-fold stratified cross-validation
-8. **Explainability** — SHAP analysis
-9. **Deployment** — saved the model with joblib for reuse on new data
+The corrected notebook has **not** been run on the full Kaggle dataset as part of this GitHub edit; download the data and execute it to obtain new numbers. The helper's small synthetic-data tests are **methodological smoke tests**, not measures of fraud-detection performance.
 
-## Results
+## Data
 
-| Model | Accuracy | Precision | Recall | F1-Score | ROC-AUC |
-|-------|----------|-----------|--------|----------|---------|
-| Logistic Regression | 0.9741 | 0.0579 | 0.9184 | 0.1089 | 0.9710 |
-| **Random Forest** | **0.9995** | **0.8710** | **0.8265** | **0.8482** | **0.9782** |
-| XGBoost | 0.9991 | 0.6885 | 0.8571 | 0.7636 | 0.9831 |
+- **Dataset:** [Credit Card Fraud Detection — Kaggle](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
+- **Transactions:** 284,807 in the source dataset; **fraud:** 492 transactions (~0.173%).
+- The `creditcard.csv` dataset is not committed. Keep raw records and all secrets out of GitHub.
 
-**Best model: Random Forest** (highest F1-score, the most suitable metric for imbalanced fraud detection).
+## Run locally
 
-**Cross-validation:** mean F1-score of 0.860 ± 0.028 (stable and reliable).
+```bash
+python -m pip install -r requirements.txt
+python -m pip install pytest
+python -m pytest -q
+```
 
-**Key insight:** Although all models achieved very high accuracy, accuracy alone is misleading for imbalanced data. Precision, recall, and F1-score reveal the true performance differences.
+Download `creditcard.csv` from Kaggle and place it next to the notebook, then launch Jupyter and run `fraud_detection.ipynb` top to bottom. The notebook installs required dependencies in its first code cell, which also supports Colab.
 
-## Visualizations
+## Run in Google Colab
 
-| Confusion Matrix | ROC Curve |
-|------------------|-----------|
-| ![Confusion Matrix](confusion_matrix.png) | ![ROC Curve](roc_curve.png) |
+1. In [Google Colab](https://colab.research.google.com/), choose **GitHub** and open this repository's `fraud_detection.ipynb` file from this branch (or `main` once changes are merged).
+2. Upload `creditcard.csv` to the notebook's working directory **or** mount your own Drive and set `DATA_PATH` accordingly.
+3. Run cells in order. Random Forest grid search is **CPU-intensive**; optional GPUs are not necessary for these scikit-learn estimators.
+4. Inspect the **new** training-CV comparison and untouched test-set results. Report execution settings, dependency versions, and data provenance when making performance claims.
 
-| Feature Importance | SHAP Summary |
-|--------------------|--------------|
-| ![Feature Importance](feature_importance.png) | ![SHAP Summary](shap_summary.png) |
+> Opening a notebook from GitHub in Colab **does not** connect this ChatGPT session to an active Colab GPU. Live automation needs a separately verified execution bridge.
 
-## How to Run
-
-1. Clone this repository
-2. Download `creditcard.csv` from Kaggle (link above) into the project folder
-3. Install the required libraries:
-   ```
-   pip install pandas numpy scikit-learn xgboost matplotlib seaborn imbalanced-learn shap joblib
-   ```
-4. Open `fraud_detection.ipynb` and run all cells
-
-## Using the Saved Model
-
-The trained model is saved as `fraud_model.joblib` (model + scaler + feature names). To predict on new data:
+## Inference after training
 
 ```python
 import joblib
 import pandas as pd
 
-bundle = joblib.load("fraud_model.joblib")
-model, scaler, features = bundle["model"], bundle["scaler"], bundle["features"]
-
+bundle = joblib.load("fraud_model_leakage_safe.joblib")  # Trusted files only
 new_data = pd.read_csv("new_transactions.csv")
-new_scaled = scaler.transform(new_data[features])
-predictions = model.predict(new_scaled)
+features = bundle["features"]
+predictions = bundle["pipeline"].predict(new_data[features])
+fraud_scores = bundle["pipeline"].predict_proba(new_data[features])[:, 1]
 ```
 
-## Technologies
+The joblib model is generated by the notebook and excluded from source control. Threshold 0.5 is the default and is **not** cost-optimized. Never tune on the held-out test. For business use, add realistic temporal evaluation, threshold calibration on training/validation data, and monitoring.
 
-Python, pandas, NumPy, scikit-learn, XGBoost, imbalanced-learn (SMOTE), SHAP, matplotlib, seaborn, joblib
+## Files
+
+- `fraud_detection.ipynb`: complete Colab-ready demonstration; runs without importing local helper files.
+- `fraud_pipeline.py`: reusable leakage-safe split and pipeline builder.
+- `tests/test_fraud_pipeline.py`: synthetic-data tests; no Kaggle account or private data needed.
+- `.github/workflows/tests.yml`: CI tests triggered by pushes and pull requests.
+- `requirements.txt`: dependencies.
+
+## Limitations
+
+This is educational, not a validated production fraud screening service. Dataset features are largely anonymized principal components, and random stratified holdout may not model a real-world time shift. No independent out-of-time generalization or financial false-positive-cost evaluation was done. An optional SHAP demonstration can be added after baseline validation.
 
 ## License
 
-This project is for educational purposes.
+For educational purposes. No open-source license has been granted by this statement.
